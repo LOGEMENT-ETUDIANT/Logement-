@@ -1,34 +1,58 @@
 import pandas as pd
+import numpy as np
 
+data = pd.read_csv("data_recuperer.csv")
 
-data = pd.read_csv("data/raw/data_recuperer.csv")
-
-before_shape = data.shape
-
-data = data.replace(r"^\s*$", pd.NA, regex=True).dropna(how="all").reset_index(drop=True)
-
-after_shape = data.shape
-
-print(f"before={before_shape} after={after_shape}")
-
-
-print(f"shape={data.shape}")
-print("\nhead:")
 print(data.head())
 
-print("\nmissing values per column:")
-missing = data.isna().sum().sort_values(ascending=False)
-print(missing)
-print(f"\nmissing cells total: {int(missing.sum())}")
+print(data.head())
+print(data.shape)
+print(data.info())
+print(data.isnull().sum())
+data = data.dropna(how="all")
 
-dup_count = int(data.duplicated().sum())
-print(f"\nduplicate rows: {dup_count}")
-if dup_count:
-    print("duplicate rows (first 10):")
-    print(data[data.duplicated(keep=False)].head(10))
+#nettoyer les colonnes
+data["Surface"] = (
+    data["Surface"]
+    .str.replace(" m²", "", regex=False)
+    .str.replace(",", ".", regex=False)
+)
 
-print("\ndescribe:")
-print(data.describe(include="all"))
+data["Surface"] = pd.to_numeric(data["Surface"], errors="coerce")
+data["Price"] = data["Price"].str.replace(r"[^\d]", "", regex=True)
+data["Price"] = pd.to_numeric(data["Price"], errors="coerce")
+data["Chambres"] = data["Chambres"].str.extract(r"(\d+)")
+data["Chambres"] = pd.to_numeric(data["Chambres"], errors="coerce")
+data["Pièces"] = data["Pièces"].str.extract(r"(\d+)")
+data["Pièces"] = pd.to_numeric(data["Pièces"], errors="coerce")
+data["Etage"] = data["Etage"].str.extract(r"(\d+)")
+data["Etage"] = pd.to_numeric(data["Etage"], errors="coerce")
 
-print("\ninfo:")
-data.info()
+#extraire des info depuis Lieu
+
+
+data["Code_postal"] = data["Lieu"].str.extract(r"\((\d{5})\)")
+data.loc[data["Lieu"] == "Bassin de la Villette", "Code_postal"] = "75019"
+data.loc[data["Lieu"] == "Clignancourt-Jules Joffrin", "Code_postal"] = "75018"
+data["Code_postal"] = pd.to_numeric(data["Code_postal"], errors="coerce")
+
+#remplir les vide dans chabre par 0 car il y a des annonce de studio 
+data["Chambres"] = data["Chambres"].fillna(0)
+print(data.dtypes)
+#remplir les vides dans piece 
+data.loc[data["Pièces"].isna(), "Pièces"] = data["Chambres"] + 1
+
+
+print(data.isnull().sum())
+data.to_csv("data_nettoyer.csv", index=False)
+
+
+
+
+
+
+
+
+
+
+
