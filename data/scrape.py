@@ -67,11 +67,11 @@ import re
 #         data.append([name.text, type.text, surface.text ,price.text])
 
 #     page += 1
-    
+
 
 # driver.quit()
 
-# with open("studapart_logements.csv", "w", newline="", encoding="utf-8") as f:
+# with open("data/raw/studapart_logements.csv", "w", newline="", encoding="utf-8") as f:
 #     writer = csv.writer(f)
 #     writer.writerow(["Name", "Type", "Surface" ,"Price"])
 #     writer.writerows(data)
@@ -79,7 +79,6 @@ import re
 # print("CSV saved successfully!")
 
 # ======================================================= SE LOGER =======================================================
-
 driver = webdriver.Chrome()
 data = []
 
@@ -146,9 +145,3 @@ out_dir = repo_root / "data" / "raw"
 out_dir.mkdir(parents=True, exist_ok=True)
 out_file = out_dir / "data_recuperer.csv"
 
-with open(out_file, "w", newline="", encoding="utf-8") as f:
-    writer = csv.writer(f)
-    writer.writerow(["Name", "Surface", "Price", "Lieu", "Chambres", "Pièces", "Etage"])
-    writer.writerows(data)
-
-print(f"CSV saved successfully: {out_file}")
