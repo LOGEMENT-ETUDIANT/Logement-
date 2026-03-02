@@ -5,8 +5,11 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load .env from the project root (one level above backend/)
+# Load env files from the project root (one level above backend/)
+# - .env: shared defaults (used by docker-compose)
+# - .env.local: local machine overrides (ignored by git)
 load_dotenv(BASE_DIR.parent / '.env')
+load_dotenv(BASE_DIR.parent / '.env.local', override=True)
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret')
 DEBUG = os.getenv('DJANGO_DEBUG', '1') == '1'

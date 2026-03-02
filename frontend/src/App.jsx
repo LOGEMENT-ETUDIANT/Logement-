@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import './App.css'
 import MapSection from './components/MapSection'
+import ChartsSection from './components/ChartsSection'
 
 const NAV_ITEMS = [
   { id: 'overview', label: 'Vue d\'ensemble', icon: '⬡' },
@@ -21,7 +22,9 @@ function App() {
   const [sidebarOpen,  setSidebarOpen]  = useState(true)
 
   // API state
-  const [stats,           setStats]           = useState(null)
+  const [globalStats,     setGlobalStats]     = useState(null)
+  const [kpiStats,        setKpiStats]        = useState(null)
+  const [chartStats,      setChartStats]      = useState(null)
   const [listings,        setListings]        = useState([])
   const [totalListings,   setTotalListings]   = useState(0)
   const [nextPage,        setNextPage]        = useState(null)
@@ -33,11 +36,49 @@ function App() {
 
   // ── Fetch stats on mount ───────────────────────────────────────────────
   useEffect(() => {
-    // all_zones=1 returns every postal code, not just top-N
+    // all_zones=1 returns every postal code, not just top-N (used by sidebar + map)
     fetch('/api/listings/stats/?all_zones=1')
       .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json() })
-      .then(data => setStats(data))
+      .then(data => {
+        setGlobalStats(data)
+        setChartStats(data)
+      })
       .catch(err => setApiError('Impossible de charger les statistiques: ' + err.message))
+
+    // KPI stats: light payload (no full by_postal list)
+    fetch('/api/listings/stats/?all_zones=0')
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json() })
+      .then(data => setKpiStats(data))
+      .catch(err => setApiError('Impossible de charger les KPI: ' + err.message))
+  }, [])
+
+  const fetchCharts = useCallback((params = {}) => {
+    const qs = new URLSearchParams()
+    qs.set('all_zones', '1')
+    if (params.search)      qs.set('search', params.search)
+    if (params.code_postal) qs.set('code_postal', params.code_postal)
+
+    fetch(`/api/listings/stats/?${qs}`)
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json() })
+      .then(data => setChartStats(data))
+      .catch(err => setApiError('Impossible de charger les graphes: ' + err.message))
+  }, [])
+
+  useEffect(() => {
+    // When filter cleared, charts go back to the global dataset
+    if (!activeFilter && globalStats) setChartStats(globalStats)
+  }, [activeFilter, globalStats])
+
+  const fetchKpis = useCallback((params = {}) => {
+    const qs = new URLSearchParams()
+    qs.set('all_zones', '0')
+    if (params.search)      qs.set('search', params.search)
+    if (params.code_postal) qs.set('code_postal', params.code_postal)
+
+    fetch(`/api/listings/stats/?${qs}`)
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json() })
+      .then(data => setKpiStats(data))
+      .catch(err => setApiError('Impossible de charger les KPI: ' + err.message))
   }, [])
 
   // ── Fetch listings ─────────────────────────────────────────────────────
@@ -69,9 +110,15 @@ function App() {
     setCurrentPage(1)
     setActiveFilter(searchQuery.trim())
     if (isPostal || searchType === 'postal') {
-      fetchListings({ code_postal: searchQuery.trim() })
+      const code = searchQuery.trim()
+      fetchListings({ code_postal: code })
+      fetchKpis({ code_postal: code })
+      fetchCharts({ code_postal: code })
     } else {
-      fetchListings({ search: searchQuery.trim() })
+      const q = searchQuery.trim()
+      fetchListings({ search: q })
+      fetchKpis({ search: q })
+      fetchCharts({ search: q })
     }
     scrollTo('listings')
   }
@@ -81,6 +128,8 @@ function App() {
     setActiveFilter('')
     setCurrentPage(1)
     fetchListings()
+    fetchKpis()
+    if (globalStats) setChartStats(globalStats)
   }
 
   const paginate = (direction) => {
@@ -99,6 +148,8 @@ function App() {
     setActiveFilter(code)
     setCurrentPage(1)
     fetchListings({ code_postal: code })
+    fetchKpis({ code_postal: code })
+    fetchCharts({ code_postal: code })
     scrollTo('listings')
   }
 
@@ -136,11 +187,11 @@ function App() {
         </nav>
 
         {/* Top postal codes shortcut */}
-        {stats?.by_postal?.length > 0 && (
+        {globalStats?.by_postal?.length > 0 && (
           <div className="sidebar-section">
             <p className="sidebar-section-label">Zones actives</p>
             <div className="dept-list">
-              {stats.by_postal.slice(0, 8).map(zone => (
+              {globalStats.by_postal.slice(0, 8).map(zone => (
                 <button
                   key={zone.code_postal}
                   className={`dept-item${activeFilter === zone.code_postal ? ' dept-item--active' : ''}`}
@@ -156,7 +207,7 @@ function App() {
 
         <div className="sidebar-footer">
           <span className="sidebar-dot" />
-          <p>{stats ? `${fmt(stats.total)} annonces` : 'Chargement…'}</p>
+          <p>{globalStats ? `${fmt(globalStats.total)} annonces` : 'Chargement…'}</p>
         </div>
       </aside>
 
@@ -213,18 +264,18 @@ function App() {
           <section id="overview" className="kpi-row">
             <div className="kpi-card">
               <span className="kpi-label">Annonces disponibles</span>
-              <strong className="kpi-value">{fmt(stats?.total)}</strong>
+              <strong className="kpi-value">{fmt(kpiStats?.total)}</strong>
               <span className="kpi-sub">logements en Île-de-France</span>
             </div>
             <div className="kpi-card">
               <span className="kpi-label">Loyer moyen</span>
-              <strong className="kpi-value">{fmt(stats?.avg_price)} <span className="kpi-unit">€/mois</span></strong>
-              <span className="kpi-sub">min {fmt(stats?.min_price)} € — max {fmt(stats?.max_price)} €</span>
+              <strong className="kpi-value">{fmt(kpiStats?.avg_price)} <span className="kpi-unit">€/mois</span></strong>
+              <span className="kpi-sub">min {fmt(kpiStats?.min_price)} € — max {fmt(kpiStats?.max_price)} €</span>
             </div>
             <div className="kpi-card kpi-card--accent">
               <span className="kpi-label">Prix moyen / m²</span>
-              <strong className="kpi-value">{fmt(stats?.avg_prix_m2, 1)} <span className="kpi-unit">€/m²</span></strong>
-              <span className="kpi-sub">surface moy. {fmt(stats?.avg_surface, 1)} m²</span>
+              <strong className="kpi-value">{fmt(kpiStats?.avg_prix_m2, 1)} <span className="kpi-unit">€/m²</span></strong>
+              <span className="kpi-sub">surface moy. {fmt(kpiStats?.avg_surface, 1)} m²</span>
             </div>
           </section>
 
@@ -239,12 +290,12 @@ function App() {
                   <p>Cliquez sur une zone pour filtrer les annonces</p>
                 </div>
                 <div className="header-badges">
-                  <span className="badge">{fmt(stats?.total)} annonces</span>
-                  <span className="badge">{stats?.by_postal?.length || '—'} zones</span>
+                  <span className="badge">{fmt(globalStats?.total)} annonces</span>
+                  <span className="badge">{globalStats?.by_postal?.length || '—'} zones</span>
                 </div>
               </div>
               <MapSection
-                statsByPostal={stats?.by_postal || []}
+                statsByPostal={globalStats?.by_postal || []}
                 onSelectZone={filterByPostal}
                 selectedPostal={activeFilter}
               />
@@ -254,14 +305,14 @@ function App() {
             <aside className="right-panel">
 
               {/* Top zones */}
-              {stats?.by_postal?.length > 0 && (
+              {globalStats?.by_postal?.length > 0 && (
                 <div className="dash-card">
                   <div className="dash-card-header"><h2>Top zones</h2></div>
                   <div className="zones-table">
                     <div className="zones-table-head">
                       <span>Code postal</span><span>Annonces</span><span>Loyer moy.</span>
                     </div>
-                    {stats.by_postal.slice(0, 8).map(zone => (
+                    {globalStats.by_postal.slice(0, 8).map(zone => (
                       <button
                         key={zone.code_postal}
                         className={`zones-table-row${activeFilter === zone.code_postal ? ' zones-table-row--active' : ''}`}
@@ -375,6 +426,11 @@ function App() {
               </>
             )}
           </section>
+
+          <ChartsSection
+            byPostal={chartStats?.by_postal || []}
+            contextLabel={activeFilter ? `Filtre actif: ${activeFilter}` : 'Répartition par code postal (top 12)'}
+          />
 
           {/* Footer bar */}
           <footer className="dash-footer">

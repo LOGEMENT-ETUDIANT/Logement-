@@ -40,7 +40,8 @@ class ListingViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def stats(self, request):
-        qs = self.get_queryset()
+        # Ensure query params like ?search=... are applied (DRF filter backends)
+        qs = self.filter_queryset(self.get_queryset()).order_by()
 
         prix_m2_expr = ExpressionWrapper(
             F('price') / F('surface'),

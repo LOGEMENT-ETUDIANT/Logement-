@@ -2,9 +2,12 @@
 __pycache__/
 *.pyc
 .env
+.env.local
 pgdata/
 .DS_Store
 .idea/
 .vscode/
 *.log
 *.ctl
+nul
+NUL
