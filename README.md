@@ -49,7 +49,7 @@ cp .env.example .env.local
 Open `.env.local` and set your database connection URL:
 
 ```
-DATABASE_URL=postgresql://<user>:<password>@<host>:<port>/<dbname>?sslmode=require
+DATABASE_URL=postgresql://postgres.imdkndaefmcaouxfwoxx:logement.2026@aws-1-eu-west-3.pooler.supabase.com:6543/postgres?sslmode=require
 ```
 
 > The project uses a cloud PostgreSQL database (Supabase). Ask the project owner for the connection string.
