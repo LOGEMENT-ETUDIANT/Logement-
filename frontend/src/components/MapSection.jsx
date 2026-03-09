@@ -27,8 +27,8 @@ function priceColor(avgPrice, minP, maxP) {
   }
 }
 
-// ── popup HTML ─────────────────────────────────────────────────────────────
-function popupHtml(name, cp, zone) {
+// ── shared HTML for tooltip (hover) and popup (click) ─────────────────────
+function zoneInfoHtml(name, cp, zone) {
   const noData = `<div class="mp-nodata">Aucune annonce disponible</div>`
   return `
     <div class="mp-title">${name}</div>
@@ -111,24 +111,42 @@ async function loadAllGeoFeatures() {
 
 // ── component ──────────────────────────────────────────────────────────────
 export default function MapSection({ statsByPostal = [], onSelectZone, selectedPostal }) {
-  const containerRef = useRef(null)
-  const mapRef       = useRef(null)
-  const layerRef     = useRef(null)
-  const featuresRef  = useRef([])
-  const statsRef     = useRef(statsByPostal)
-  const selectedRef  = useRef(selectedPostal)
-  statsRef.current   = statsByPostal
+  const containerRef  = useRef(null)
+  const mapRef        = useRef(null)
+  const layerRef      = useRef(null)
+  const featuresRef   = useRef([])
+  const statsRef      = useRef(statsByPostal)
+  const selectedRef   = useRef(selectedPostal)
+  const priceMapRef   = useRef({ map: {}, minP: 500, maxP: 8000 })
+  const clearHoverRef = useRef(() => {})
+  statsRef.current    = statsByPostal
   selectedRef.current = selectedPostal
 
   const [geoLoading, setGeoLoading] = useState(true)
   const [geoError,   setGeoError]   = useState('')
+
+  // Clear hover + focus ring on any mousedown (capture = before Leaflet)
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const onPress = () => {
+      clearHoverRef.current()
+      if (document.activeElement && el.contains(document.activeElement)) {
+        document.activeElement.blur()
+      }
+    }
+    el.addEventListener('mousedown', onPress, true)
+    return () => el.removeEventListener('mousedown', onPress, true)
+  }, [])
 
   // ── init map once ────────────────────────────────────────────────────────
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return
 
     mapRef.current = L.map(containerRef.current, {
-      center: IDF_CENTER, zoom: IDF_ZOOM, zoomControl: true,
+      center: IDF_CENTER,
+      zoom: IDF_ZOOM,
+      zoomControl: true,
     })
     L.tileLayer(
       'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -180,6 +198,26 @@ export default function MapSection({ statsByPostal = [], onSelectZone, selectedP
     layerRef.current?.remove()
 
     const { map: pMap, minP, maxP } = buildPriceMap()
+    priceMapRef.current = { map: pMap, minP, maxP }
+
+    function clearHoverStyles() {
+      if (!layerRef.current) return
+      const { map: pm, minP: min, maxP: max } = priceMapRef.current
+      layerRef.current.eachLayer(layer => {
+        const f = layer.feature
+        if (!f) return
+        const { cp, data } = getZone(f, pm)
+        const sel = cp === selectedRef.current
+        const { fill, stroke } = priceColor(data?.avg_price, min, max)
+        layer.setStyle({
+          fillColor:   fill,
+          fillOpacity: 1,
+          color:       sel ? '#ff2020' : stroke,
+          weight:      sel ? 2.5 : 0.6,
+        })
+      })
+    }
+    clearHoverRef.current = clearHoverStyles
 
     layerRef.current = L.geoJSON(
       { type: 'FeatureCollection', features: featuresRef.current },
@@ -199,15 +237,28 @@ export default function MapSection({ statsByPostal = [], onSelectZone, selectedP
           const { cp, data } = getZone(feature, pMap)
           const name = feature.properties?.nom || ''
 
+          layer.options.bubblingMouseEvents = true
+
+          layer.bindTooltip(
+            `<div class="map-popup">${zoneInfoHtml(name, cp, data)}</div>`,
+            {
+              className:  'dark-tooltip',
+              sticky:     true,
+              opacity:    1,
+              direction:  'auto',
+              offset:     [12, 0],
+            },
+          )
+
           layer.bindPopup(
-            `<div class="map-popup">${popupHtml(name, cp, data)}</div>`,
-            { className: 'dark-popup', maxWidth: 230 },
+            `<div class="map-popup">${zoneInfoHtml(name, cp, data)}</div>`,
+            { className: 'dark-popup', maxWidth: 230, autoClose: true, closeOnClick: true },
           )
 
           layer.on({
             mouseover(e) {
               e.target.setStyle({ weight: 2, color: 'rgba(255,255,255,0.55)' })
-              e.target.openPopup()
+              e.target.bringToFront()
             },
             mouseout(e) {
               const sel = cp === selectedRef.current
@@ -218,7 +269,10 @@ export default function MapSection({ statsByPostal = [], onSelectZone, selectedP
               })
             },
             click() {
-              if (cp) onSelectZone?.(cp)
+              if (cp) {
+                layer.openPopup()
+                onSelectZone?.(cp)
+              }
             },
           })
         },
@@ -252,7 +306,7 @@ export default function MapSection({ statsByPostal = [], onSelectZone, selectedP
         </div>
       )}
       {geoError && <div className="imap-overlay imap-error">{geoError}</div>}
-      <div ref={containerRef} className="imap-container" />
+      <div ref={containerRef} className="imap-container" tabIndex={-1} />
       {!geoLoading && (
         <div className="imap-legend">
           <span style={{ background: 'rgba(93,224,191,0.7)' }} />

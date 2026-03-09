@@ -504,7 +504,6 @@ body {
 .imap-wrap {
   position: relative;
   border-radius: 8px;
-  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
   min-height: 460px;
   flex: 1;
@@ -515,6 +514,16 @@ body {
   height: 100%;
   min-height: 460px;
   background: #0a0a0a;
+  outline: none;
+}
+
+.imap-container:focus,
+.imap-container:focus-visible,
+.leaflet-container:focus,
+.leaflet-container:focus-visible,
+.leaflet-container *:focus,
+.leaflet-container *:focus-visible {
+  outline: none !important;
 }
 
 /* Loading / error overlay */
@@ -607,34 +616,19 @@ body {
 
 .leaflet-control-attribution a { color: rgba(255, 255, 255, 0.4) !important; }
 
-/* Dark popup */
-.dark-popup .leaflet-popup-content-wrapper {
+/* Dark tooltip (replaces popup — non-blocking, follows cursor) */
+.dark-tooltip.leaflet-tooltip {
   background: #111 !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   border-radius: 8px !important;
   color: white !important;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7) !important;
   padding: 0 !important;
+  pointer-events: none !important;
 }
 
-.dark-popup .leaflet-popup-content {
-  margin: 0 !important;
-  line-height: 1.5 !important;
-}
-
-.dark-popup .leaflet-popup-tip {
-  background: #111 !important;
-}
-
-.dark-popup .leaflet-popup-close-button {
-  color: rgba(255, 255, 255, 0.4) !important;
-  top: 6px !important;
-  right: 8px !important;
-  font-size: 16px !important;
-}
-
-.dark-popup .leaflet-popup-close-button:hover {
-  color: white !important;
+.dark-tooltip.leaflet-tooltip::before {
+  display: none !important;
 }
 
 /* Popup content */
