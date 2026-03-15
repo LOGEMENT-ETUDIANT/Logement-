@@ -110,7 +110,7 @@ async function loadAllGeoFeatures() {
 }
 
 // ── component ──────────────────────────────────────────────────────────────
-export default function MapSection({ statsByPostal = [], onSelectZone, selectedPostal }) {
+export default function MapSection({ statsByPostal = [], onSelectZone, selectedPostal, hasActiveFilter = false }) {
   const containerRef  = useRef(null)
   const mapRef        = useRef(null)
   const layerRef      = useRef(null)
@@ -297,6 +297,8 @@ export default function MapSection({ statsByPostal = [], onSelectZone, selectedP
     })
   }, [selectedPostal])
 
+  const noDataForFilter = hasActiveFilter && !geoLoading && !geoError && statsByPostal.length === 0
+
   return (
     <div className="imap-wrap">
       {geoLoading && (
@@ -306,6 +308,12 @@ export default function MapSection({ statsByPostal = [], onSelectZone, selectedP
         </div>
       )}
       {geoError && <div className="imap-overlay imap-error">{geoError}</div>}
+      {noDataForFilter && (
+        <div className="imap-overlay imap-empty-filter">
+          <p>Aucune donnée pour ce filtre.</p>
+          <p className="imap-empty-filter-sub">La carte n&apos;affiche que les zones correspondantes.</p>
+        </div>
+      )}
       <div ref={containerRef} className="imap-container" tabIndex={-1} />
       {!geoLoading && (
         <div className="imap-legend">
