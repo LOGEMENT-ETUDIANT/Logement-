@@ -13,9 +13,7 @@ data = data.drop_duplicates()
 print(data.duplicated().sum())
 
 data["Price"] = data["Price"].str.replace("\n", " ", regex=False)
-
 data = data.drop(columns=["Type", "Logement","Chambres","Etage"])
-
 data["Pièces"] = data["Pièces"].fillna(1)
 
 def moyenne_surface(val):

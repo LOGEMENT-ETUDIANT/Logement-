@@ -1,9 +1,28 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
+*.pyo
+
+# Environment files (contain secrets)
 .env
+.env.local
+
+# Database / Docker volumes
 pgdata/
+
+# Data files (large CSVs, raw scraped data)
+*.csv
+data/raw/
+data_recuperer_clean.csv
+
+# OS / editor
 .DS_Store
 .idea/
 .vscode/
+
+# Logs
 *.log
+*.ctl
+nul
+NUL

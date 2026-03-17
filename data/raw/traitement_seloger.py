@@ -12,12 +12,7 @@ data = data.dropna(how="all")
 data = data.drop(columns=["Chambres","Etage"])
 
 #nettoyer les colonnes
-data["Surface"] = (
-    data["Surface"]
-    .str.replace(" m²", "", regex=False)
-    .str.replace(",", ".", regex=False)
-)
-
+data["Surface"] = (data["Surface"].str.replace(" m²", "", regex=False).str.replace(",", ".", regex=False))
 data["Surface"] = pd.to_numeric(data["Surface"], errors="coerce")
 data["Price"] = data["Price"].str.replace(r"[^\d]", "", regex=True)
 data["Price"] = pd.to_numeric(data["Price"], errors="coerce")

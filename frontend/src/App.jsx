@@ -1,297 +1,454 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import './App.css'
 import MapSection from './components/MapSection'
+import ChartsSection from './components/ChartsSection'
+
+const NAV_ITEMS = [
+  { id: 'overview', label: 'Vue d\'ensemble', icon: '⬡' },
+  { id: 'map',      label: 'Carte',            icon: '◎' },
+  { id: 'listings', label: 'Annonces',          icon: '▤' },
+  { id: 'guide',    label: 'Comment ça marche', icon: '▦' },
+]
+
+const fmt = (n, decimals = 0) =>
+  n != null
+    ? Number(n).toLocaleString('fr-FR', { maximumFractionDigits: decimals })
+    : '—'
 
 function App() {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchType, setSearchType] = useState('city') // 'city' or 'postal'
-  const [scrollY, setScrollY] = useState(0)
-  const [isNavbarScrolled, setIsNavbarScrolled] = useState(false)
-  const heroRef = useRef(null)
-  const featuresRef = useRef(null)
-  const aboutRef = useRef(null)
+  const [searchQuery,  setSearchQuery]  = useState('')
+  const [searchType,   setSearchType]   = useState('city')
+  const [activeSection, setActiveSection] = useState('overview')
+  const [sidebarOpen,  setSidebarOpen]  = useState(true)
 
+  // API state
+  const [globalStats,     setGlobalStats]     = useState(null)
+  const [kpiStats,        setKpiStats]        = useState(null)
+  const [chartStats,      setChartStats]      = useState(null)
+  const [listings,        setListings]        = useState([])
+  const [totalListings,   setTotalListings]   = useState(0)
+  const [nextPage,        setNextPage]        = useState(null)
+  const [prevPage,        setPrevPage]        = useState(null)
+  const [currentPage,     setCurrentPage]     = useState(1)
+  const [apiLoading,      setApiLoading]      = useState(true)
+  const [apiError,        setApiError]        = useState('')
+  const [activeFilter,    setActiveFilter]    = useState('')
+
+  // ── Fetch stats on mount ───────────────────────────────────────────────
   useEffect(() => {
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY
-      setScrollY(currentScrollY)
-      setIsNavbarScrolled(currentScrollY > 50)
-    }
-
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
-
-  useEffect(() => {
-    const observerOptions = {
-      threshold: 0.1,
-      rootMargin: '0px 0px -100px 0px'
-    }
-
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible')
-          
-          // Animate numbers if it's a stat card
-          const statNumber = entry.target.querySelector('.stat-number')
-          if (statNumber && !statNumber.dataset.animated) {
-            const target = parseInt(statNumber.dataset.target)
-            animateNumber(statNumber, 0, target, 2000)
-            statNumber.dataset.animated = 'true'
-          }
-        }
+    // all_zones=1 returns every postal code, not just top-N (used by sidebar + map)
+    fetch('/api/listings/stats/?all_zones=1')
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json() })
+      .then(data => {
+        setGlobalStats(data)
+        setChartStats(data)
       })
-    }, observerOptions)
+      .catch(err => setApiError('Impossible de charger les statistiques: ' + err.message))
 
-    const elements = document.querySelectorAll('.fade-in-up, .fade-in, .slide-in-left, .slide-in-right, .stat-card')
-    elements.forEach(el => observer.observe(el))
-
-    return () => observer.disconnect()
+    // KPI stats: light payload (no full by_postal list)
+    fetch('/api/listings/stats/?all_zones=0')
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json() })
+      .then(data => setKpiStats(data))
+      .catch(err => setApiError('Impossible de charger les KPI: ' + err.message))
   }, [])
 
-  const animateNumber = (element, start, end, duration) => {
-    const startTime = performance.now()
-    const animate = (currentTime) => {
-      const elapsed = currentTime - startTime
-      const progress = Math.min(elapsed / duration, 1)
-      const easeOutQuart = 1 - Math.pow(1 - progress, 4)
-      const current = Math.floor(start + (end - start) * easeOutQuart)
-      element.textContent = current
-      if (progress < 1) {
-        requestAnimationFrame(animate)
-      } else {
-        element.textContent = end
-      }
-    }
-    requestAnimationFrame(animate)
-  }
+  const fetchCharts = useCallback((params = {}) => {
+    const qs = new URLSearchParams()
+    qs.set('all_zones', '1')
+    if (params.search)      qs.set('search', params.search)
+    if (params.code_postal) qs.set('code_postal', params.code_postal)
 
+    fetch(`/api/listings/stats/?${qs}`)
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json() })
+      .then(data => setChartStats(data))
+      .catch(err => setApiError('Impossible de charger les graphes: ' + err.message))
+  }, [])
+
+  useEffect(() => {
+    // When filter cleared, charts go back to the global dataset
+    if (!activeFilter && globalStats) setChartStats(globalStats)
+  }, [activeFilter, globalStats])
+
+  const fetchKpis = useCallback((params = {}) => {
+    const qs = new URLSearchParams()
+    qs.set('all_zones', '0')
+    if (params.search)      qs.set('search', params.search)
+    if (params.code_postal) qs.set('code_postal', params.code_postal)
+
+    fetch(`/api/listings/stats/?${qs}`)
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json() })
+      .then(data => setKpiStats(data))
+      .catch(err => setApiError('Impossible de charger les KPI: ' + err.message))
+  }, [])
+
+  // ── Fetch listings ─────────────────────────────────────────────────────
+  const fetchListings = useCallback((params = {}) => {
+    setApiLoading(true)
+    const qs = new URLSearchParams()
+    if (params.search)      qs.set('search', params.search)
+    if (params.code_postal) qs.set('code_postal', params.code_postal)
+    if (params.page)        qs.set('page', params.page)
+
+    fetch(`/api/listings/?${qs}`)
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json() })
+      .then(data => {
+        setListings(data.results || [])
+        setTotalListings(data.count || 0)
+        setNextPage(data.next)
+        setPrevPage(data.previous)
+      })
+      .catch(err => setApiError('Impossible de charger les annonces: ' + err.message))
+      .finally(() => setApiLoading(false))
+  }, [])
+
+  useEffect(() => { fetchListings() }, [fetchListings])
+
+  // ── Search ─────────────────────────────────────────────────────────────
   const handleSearch = (e) => {
     e.preventDefault()
-    if (searchQuery.trim()) {
-      // TODO: Implement search functionality
-      console.log(`Searching for ${searchType}: ${searchQuery}`)
+    const isPostal = /^\d{5}$/.test(searchQuery.trim())
+    setCurrentPage(1)
+    setActiveFilter(searchQuery.trim())
+    if (isPostal || searchType === 'postal') {
+      const code = searchQuery.trim()
+      fetchListings({ code_postal: code })
+      fetchKpis({ code_postal: code })
+      fetchCharts({ code_postal: code })
+    } else {
+      const q = searchQuery.trim()
+      fetchListings({ search: q })
+      fetchKpis({ search: q })
+      fetchCharts({ search: q })
     }
+    scrollTo('listings')
   }
 
-  const scrollProgress = Math.min((scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100, 100)
+  const clearFilter = () => {
+    setSearchQuery('')
+    setActiveFilter('')
+    setCurrentPage(1)
+    fetchListings()
+    fetchKpis()
+    if (globalStats) setChartStats(globalStats)
+  }
+
+  const paginate = (direction) => {
+    const newPage = currentPage + direction
+    setCurrentPage(newPage)
+    fetchListings({
+      search:      activeFilter && !/^\d{5}$/.test(activeFilter) ? activeFilter : '',
+      code_postal: activeFilter && /^\d{5}$/.test(activeFilter)  ? activeFilter : '',
+      page:        newPage,
+    })
+    document.getElementById('listings')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const filterByPostal = (code) => {
+    setSearchQuery(code)
+    setActiveFilter(code)
+    setCurrentPage(1)
+    fetchListings({ code_postal: code })
+    fetchKpis({ code_postal: code })
+    fetchCharts({ code_postal: code })
+    scrollTo('listings')
+  }
+
+  const scrollTo = (id) => {
+    setActiveSection(id)
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const totalPages = Math.ceil(totalListings / 20)
 
   return (
-    <div className="app">
-      {/* Scroll Progress Bar */}
-      <div className="scroll-progress" style={{ width: `${scrollProgress}%` }}></div>
+    <div className={`dashboard${sidebarOpen ? '' : ' sidebar-collapsed'}`}>
 
-      {/* Navigation */}
-      <nav className={`navbar ${isNavbarScrolled ? 'scrolled' : ''}`}>
-        <div className="nav-container">
-          <div className="logo">
-            <span className="logo-text">Logement</span>
-            <span className="logo-accent">IDF</span>
-          </div>
-          <div className="nav-links">
-            <a href="#how-it-works" className="nav-link">Comment ça marche</a>
-            <a href="#map" className="nav-link">Carte</a>
-            <a href="#about" className="nav-link">À propos</a>
+      {/* ── Sidebar ── */}
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <div className="sidebar-logo">IDF</div>
+          <div className="sidebar-brand-text">
+            <span className="sidebar-brand-name">Logement</span>
+            <span className="sidebar-brand-sub">Île-de-France</span>
           </div>
         </div>
-      </nav>
 
-      {/* Hero Section */}
-      <section className="hero" ref={heroRef}>
-        <div className="hero-background">
-          <div className="animated-shape shape-1"></div>
-          <div className="animated-shape shape-2"></div>
-          <div className="animated-shape shape-3"></div>
+        <nav className="sidebar-nav">
+          {NAV_ITEMS.map(item => (
+            <button
+              key={item.id}
+              className={`nav-item${activeSection === item.id ? ' nav-item--active' : ''}`}
+              onClick={() => scrollTo(item.id)}
+            >
+              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-label">{item.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        {/* Top postal codes shortcut */}
+        {globalStats?.by_postal?.length > 0 && (
+          <div className="sidebar-section">
+            <p className="sidebar-section-label">Zones actives</p>
+            <div className="dept-list">
+              {globalStats.by_postal.slice(0, 8).map(zone => (
+                <button
+                  key={zone.code_postal}
+                  className={`dept-item${activeFilter === zone.code_postal ? ' dept-item--active' : ''}`}
+                  onClick={() => filterByPostal(zone.code_postal)}
+                >
+                  <span className="dept-code">{zone.code_postal}</span>
+                  <span className="dept-name">{fmt(zone.avg_price)} €/mois</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="sidebar-footer">
+          <span className="sidebar-dot" />
+          <p>{globalStats ? `${fmt(globalStats.total)} annonces` : 'Chargement…'}</p>
         </div>
-        <div className="hero-content">
-          <h1 className="hero-title fade-in-up">
-            Trouvez votre logement étudiant en{' '}
-            <span className="highlight">
-              <span className="highlight-text">Île-de-France</span>
-              <span className="highlight-underline"></span>
-            </span>
-          </h1>
-          <p className="hero-subtitle fade-in-up">
-            Analysez le marché locatif selon votre zone
-          </p>
+      </aside>
 
-          {/* Search - minimal inline bar */}
-          <form className="search-form fade-in-up" onSubmit={handleSearch}>
-            <div className="search-bar">
+      {/* ── Dashboard Body ── */}
+      <div className="dashboard-body">
+
+        {/* Topbar */}
+        <header className="topbar">
+          <button className="topbar-toggle" onClick={() => setSidebarOpen(v => !v)} aria-label="Toggle sidebar">
+            ☰
+          </button>
+
+          <div className="topbar-title">
+            <span className="topbar-eyebrow">Plateforme étudiante</span>
+            <h1>Analyse locative</h1>
+          </div>
+
+          <div className="topbar-search-wrap">
+            <form className="topbar-search" onSubmit={handleSearch}>
               <span className="search-type-toggle">
-                <button type="button" className={`search-type-btn ${searchType === 'city' ? 'active' : ''}`} onClick={() => setSearchType('city')}>Ville</button>
+                <button type="button" className={`search-type-btn${searchType === 'city' ? ' active' : ''}`} onClick={() => setSearchType('city')}>Ville</button>
                 <span className="search-type-divider">/</span>
-                <button type="button" className={`search-type-btn ${searchType === 'postal' ? 'active' : ''}`} onClick={() => setSearchType('postal')}>Code postal</button>
+                <button type="button" className={`search-type-btn${searchType === 'postal' ? ' active' : ''}`} onClick={() => setSearchType('postal')}>Code postal</button>
               </span>
               <input
                 type="text"
                 className="search-input"
-                placeholder={searchType === 'city' ? 'Paris, Créteil…' : '75001, 94000…'}
+                placeholder={searchType === 'city' ? 'Paris, Créteil, Vincennes…' : '75011, 94200…'}
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={e => setSearchQuery(e.target.value)}
               />
               <button type="submit" className="search-submit" aria-label="Rechercher">→</button>
-            </div>
-          </form>
-
-          {/* Scroll Indicator */}
-          <div className="scroll-indicator fade-in">
-            <div className="scroll-mouse">
-              <div className="scroll-wheel"></div>
-            </div>
-            <span className="scroll-text">Découvrez plus</span>
+            </form>
           </div>
-        </div>
-      </section>
 
-      {/* Stats Section */}
-      <section className="stats-section">
-        <div className="container">
-          <div className="stats-grid">
-            <div className="stat-card fade-in-up">
-              <div className="stat-number" data-target="1000">0</div>
-              <div className="stat-label">Logements analysés</div>
-            </div>
-            <div className="stat-card fade-in-up">
-              <div className="stat-number" data-target="50">0</div>
-              <div className="stat-label">Villes couvertes</div>
-            </div>
-            <div className="stat-card fade-in-up">
-              <div className="stat-number" data-target="95">0</div>
-              <div className="stat-label">% de précision</div>
-            </div>
+          <div className="topbar-meta">
+            {activeFilter
+              ? <button className="topbar-filter-badge" onClick={clearFilter}>{activeFilter} ✕</button>
+              : <span className="topbar-badge">IDF</span>
+            }
           </div>
-        </div>
-      </section>
+        </header>
 
-      {/* Features Section */}
-      <section className="features" id="how-it-works" ref={featuresRef}>
-        <div className="container">
-          <div className="section-header fade-in">
-            <h2 className="section-title">
-              <span className="title-number">01</span>
-              Comment ça marche ?
-            </h2>
-            <p className="section-subtitle">Trois étapes simples pour trouver votre logement idéal</p>
-          </div>
-          <div className="features-grid">
-            <div className="feature-card slide-in-left">
-              <div className="feature-card-inner">
-                <div className="feature-number">01</div>
-                <div className="feature-icon-wrapper">
-                  <div className="feature-icon">🔍</div>
-                  <div className="icon-glow"></div>
+        {/* Main */}
+        <main className="dashboard-main">
+
+          {apiError && (
+            <div className="api-error">
+              ⚠ {apiError} — <a href="http://localhost:8000/api/" target="_blank" rel="noreferrer">vérifier le backend</a>
+            </div>
+          )}
+
+          {/* ── KPI Row ── */}
+          <section id="overview" className="kpi-row">
+            <div className="kpi-card">
+              <span className="kpi-label">Annonces disponibles</span>
+              <strong className="kpi-value">{fmt(kpiStats?.total)}</strong>
+              <span className="kpi-sub">logements en Île-de-France</span>
+            </div>
+            <div className="kpi-card">
+              <span className="kpi-label">Loyer moyen</span>
+              <strong className="kpi-value">{fmt(kpiStats?.avg_price)} <span className="kpi-unit">€/mois</span></strong>
+              <span className="kpi-sub">min {fmt(kpiStats?.min_price)} € — max {fmt(kpiStats?.max_price)} €</span>
+            </div>
+            <div className="kpi-card kpi-card--accent">
+              <span className="kpi-label">Prix moyen / m²</span>
+              <strong className="kpi-value">{fmt(kpiStats?.avg_prix_m2, 1)} <span className="kpi-unit">€/m²</span></strong>
+              <span className="kpi-sub">surface moy. {fmt(kpiStats?.avg_surface, 1)} m²</span>
+            </div>
+            <div className="kpi-card">
+              <span className="kpi-label">Probabilité de trouver un logement</span>
+              <strong className="kpi-value">{fmt(kpiStats?.finding_probability, 1)} <span className="kpi-unit">%</span></strong>
+              <span className="kpi-sub">score de disponibilité dans la zone recherchée</span>
+            </div>
+          </section>
+
+          {/* ── Content Grid ── */}
+          <div className="content-grid">
+
+            {/* Map panel */}
+            <section className="dash-card map-panel" id="map">
+              <div className="dash-card-header">
+                <div>
+                  <h2>Carte Île-de-France</h2>
+                  <p>Cliquez sur une zone pour filtrer les annonces</p>
                 </div>
-                <h3>Recherchez</h3>
-                <p>
-                  Entrez une ville ou un code postal en Île-de-France pour analyser
-                  le marché locatif de la zone
-                </p>
-                <div className="feature-arrow">→</div>
-              </div>
-            </div>
-            <div className="feature-card fade-in-up">
-              <div className="feature-card-inner">
-                <div className="feature-number">02</div>
-                <div className="feature-icon-wrapper">
-                  <div className="feature-icon">📊</div>
-                  <div className="icon-glow"></div>
+                <div className="header-badges">
+                  <span className="badge">{fmt(globalStats?.total)} annonces</span>
+                  <span className="badge">{globalStats?.by_postal?.length || '—'} zones</span>
                 </div>
-                <h3>Analysez</h3>
-                <p>
-                  Consultez des statistiques détaillées : prix moyen des loyers,
-                  nombre de logements disponibles et indisponibles
-                </p>
-                <div className="feature-arrow">→</div>
               </div>
-            </div>
-            <div className="feature-card slide-in-right">
-              <div className="feature-card-inner">
-                <div className="feature-number">03</div>
-                <div className="feature-icon-wrapper">
-                  <div className="feature-icon">📈</div>
-                  <div className="icon-glow"></div>
+              <MapSection
+                statsByPostal={globalStats?.by_postal || []}
+                onSelectZone={filterByPostal}
+                selectedPostal={activeFilter}
+              />
+            </section>
+
+            {/* Right panel */}
+            <aside className="right-panel">
+
+              {/* Top zones */}
+              {globalStats?.by_postal?.length > 0 && (
+                <div className="dash-card">
+                  <div className="dash-card-header"><h2>Top zones</h2></div>
+                  <div className="zones-table">
+                    <div className="zones-table-head">
+                      <span>Code postal</span><span>Annonces</span><span>Loyer moy.</span>
+                    </div>
+                    {globalStats.by_postal.slice(0, 8).map(zone => (
+                      <button
+                        key={zone.code_postal}
+                        className={`zones-table-row${activeFilter === zone.code_postal ? ' zones-table-row--active' : ''}`}
+                        onClick={() => filterByPostal(zone.code_postal)}
+                      >
+                        <span className="zone-code">{zone.code_postal}</span>
+                        <span>{zone.count}</span>
+                        <span>{fmt(zone.avg_price)} €</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <h3>Évaluez</h3>
+              )}
+
+              {/* How it works */}
+              <div className="dash-card" id="guide">
+                <div className="dash-card-header"><h2>Comment ça marche ?</h2></div>
+                <div className="steps-list">
+                  {[
+                    { n: '01', icon: '🔍', title: 'Recherchez', desc: 'Entrez une ville ou code postal en Île-de-France' },
+                    { n: '02', icon: '📊', title: 'Analysez',   desc: 'Consultez prix, surface et disponibilités' },
+                    { n: '03', icon: '📈', title: 'Évaluez',    desc: 'Comparez les zones pour trouver le meilleur rapport qualité/prix' },
+                  ].map(s => (
+                    <div className="step-item" key={s.n}>
+                      <div className="step-num">{s.n}</div>
+                      <div className="step-body">
+                        <div className="step-icon">{s.icon}</div>
+                        <div><h3>{s.title}</h3><p>{s.desc}</p></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </aside>
+          </div>
+
+          {/* ── Listings Table ── */}
+          <section className="dash-card listings-section" id="listings">
+            <div className="dash-card-header">
+              <div>
+                <h2>Annonces</h2>
                 <p>
-                  Découvrez la probabilité de trouver un logement dans votre zone,
-                  exprimée en pourcentage pour évaluer la tension du marché
+                  {activeFilter
+                    ? `${fmt(totalListings)} résultats pour « ${activeFilter} »`
+                    : `${fmt(totalListings)} annonces au total`}
                 </p>
-                <div className="feature-arrow">→</div>
               </div>
+              {activeFilter && (
+                <button className="clear-btn" onClick={clearFilter}>Effacer le filtre</button>
+              )}
             </div>
-          </div>
-        </div>
-      </section>
 
-      {/* Map Section */}
-      <MapSection />
+            {apiLoading ? (
+              <div className="listings-loading">
+                <span className="loading-dot" /><span className="loading-dot" /><span className="loading-dot" />
+              </div>
+            ) : listings.length === 0 ? (
+              <p className="listings-empty">Aucune annonce trouvée.</p>
+            ) : (
+              <>
+                <div className="listings-table-wrap">
+                  <table className="listings-table">
+                    <thead>
+                      <tr>
+                        <th>Lieu</th>
+                        <th>CP</th>
+                        <th>Prix</th>
+                        <th>Surface</th>
+                        <th>Prix/m²</th>
+                        <th>Pièces</th>
+                        <th>Chambres</th>
+                        <th>Étage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {listings.map(l => (
+                        <tr key={l.id} className="listing-row">
+                          <td className="listing-lieu" title={l.lieu}>{l.lieu}</td>
+                          <td>
+                            <button className="cp-badge" onClick={() => filterByPostal(l.code_postal)}>
+                              {l.code_postal}
+                            </button>
+                          </td>
+                          <td className="listing-price">{fmt(l.price)} €</td>
+                          <td>{fmt(l.surface, 1)} m²</td>
+                          <td className="listing-ppm2">{l.prix_m2 ? `${fmt(l.prix_m2, 1)} €` : '—'}</td>
+                          <td>{l.pieces != null ? Math.round(l.pieces) : '—'}</td>
+                          <td>{l.chambres != null ? Math.round(l.chambres) : '—'}</td>
+                          <td>{l.etage != null ? Math.round(l.etage) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-      {/* About Section */}
-      <section className="about" id="about" ref={aboutRef}>
-        <div className="about-background"></div>
-        <div className="container">
-          <div className="about-content fade-in">
-            <div className="section-header">
-              <h2 className="section-title">
-                <span className="title-number">03</span>
-                À propos
-              </h2>
-            </div>
-            <div className="about-text-wrapper">
-              <p className="about-text">
-                Cette plateforme vous aide à prendre de meilleures décisions avant
-                d'entamer vos démarches de recherche de logement. Conçue spécialement
-                pour les étudiants en Île-de-France, elle offre une vision claire et
-                objective du marché locatif selon une zone géographique donnée.
-              </p>
-              <p className="about-text">
-                Simple, pédagogique et accessible, notre application met l'accent sur
-                l'expérience utilisateur pour vous accompagner dans votre recherche,
-                même avec des contraintes de budget et de temps.
-              </p>
-            </div>
-            <div className="about-features">
-              <div className="about-feature-item">
-                <div className="about-feature-icon">✓</div>
-                <span>Gratuit et accessible</span>
-              </div>
-              <div className="about-feature-item">
-                <div className="about-feature-icon">✓</div>
-                <span>Données en temps réel</span>
-              </div>
-              <div className="about-feature-item">
-                <div className="about-feature-icon">✓</div>
-                <span>Interface intuitive</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+                {/* Pagination */}
+                <div className="pagination">
+                  <button
+                    className="page-btn"
+                    disabled={!prevPage}
+                    onClick={() => paginate(-1)}
+                  >← Précédent</button>
+                  <span className="page-info">Page {currentPage} / {totalPages}</span>
+                  <button
+                    className="page-btn"
+                    disabled={!nextPage}
+                    onClick={() => paginate(1)}
+                  >Suivant →</button>
+                </div>
+              </>
+            )}
+          </section>
 
-      {/* Footer */}
-      <footer className="footer">
-        <div className="container">
-          <div className="footer-content">
-            <div className="footer-brand">
-              <div className="logo">
-                <span className="logo-text">Logement</span>
-                <span className="logo-accent">IDF</span>
-              </div>
-              <p>Aide à la recherche de logement étudiant en Île-de-France</p>
-            </div>
-            <div className="footer-links">
-              <a href="#how-it-works">Comment ça marche</a>
-              <a href="#map">Carte</a>
-              <a href="#about">À propos</a>
-            </div>
-          </div>
-          <div className="footer-bottom">
-            <p>&copy; 2026 Logement IDF. Tous droits réservés.</p>
-          </div>
-        </div>
-      </footer>
+          <ChartsSection
+            byPostal={chartStats?.by_postal || []}
+            contextLabel={activeFilter ? `Filtre actif: ${activeFilter}` : 'Répartition par code postal (top 12)'}
+          />
+
+          {/* Footer bar */}
+          <footer className="dash-footer">
+            <span>
+              <span className="footer-logo-text">Logement</span>
+              <span className="footer-logo-accent">IDF</span>
+            </span>
+            <span>Aide à la recherche de logement étudiant · Île-de-France</span>
+            <span>© 2026 Tous droits réservés</span>
+          </footer>
+
+        </main>
+      </div>
     </div>
   )
 }
