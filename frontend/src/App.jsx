@@ -260,12 +260,29 @@ function App() {
             </div>
           )}
 
+          {/* ── Bandeau filtre actif (visible + compteur) ── */}
+          {activeFilter && (
+            <div className="filter-strip" role="status" aria-live="polite">
+              <span className="filter-strip-icon" aria-hidden>◇</span>
+              <span className="filter-strip-label">Filtre actif :</span>
+              <strong className="filter-strip-value">{activeFilter}</strong>
+              <span className="filter-strip-count">
+                {apiLoading ? '…' : `${fmt(totalListings)} annonce${totalListings !== 1 ? 's' : ''}`}
+              </span>
+              <button type="button" className="filter-strip-clear" onClick={clearFilter}>
+                Effacer le filtre
+              </button>
+            </div>
+          )}
+
           {/* ── KPI Row ── */}
           <section id="overview" className="kpi-row">
             <div className="kpi-card">
               <span className="kpi-label">Annonces disponibles</span>
               <strong className="kpi-value">{fmt(kpiStats?.total)}</strong>
-              <span className="kpi-sub">logements en Île-de-France</span>
+              <span className="kpi-sub">
+                {activeFilter ? `pour « ${activeFilter} »` : 'logements en Île-de-France'}
+              </span>
             </div>
             <div className="kpi-card">
               <span className="kpi-label">Loyer moyen</span>
@@ -292,17 +309,32 @@ function App() {
               <div className="dash-card-header">
                 <div>
                   <h2>Carte Île-de-France</h2>
-                  <p>Cliquez sur une zone pour filtrer les annonces</p>
+                  <p>
+                    {activeFilter
+                      ? `Zones correspondant au filtre « ${activeFilter} »`
+                      : 'Cliquez sur une zone pour filtrer les annonces'}
+                  </p>
                 </div>
                 <div className="header-badges">
-                  <span className="badge">{fmt(globalStats?.total)} annonces</span>
-                  <span className="badge">{globalStats?.by_postal?.length || '—'} zones</span>
+                  <span className="badge">
+                    {activeFilter ? fmt(totalListings) : fmt(globalStats?.total)} annonces
+                  </span>
+                  <span className="badge">
+                    {activeFilter
+                      ? (chartStats?.by_postal?.length ?? '—')
+                      : (globalStats?.by_postal?.length ?? '—')} zones
+                  </span>
                 </div>
               </div>
               <MapSection
-                statsByPostal={globalStats?.by_postal || []}
+                statsByPostal={
+                  activeFilter
+                    ? (chartStats?.by_postal || [])
+                    : (globalStats?.by_postal || [])
+                }
                 onSelectZone={filterByPostal}
                 selectedPostal={activeFilter}
+                hasActiveFilter={!!activeFilter}
               />
             </section>
 
@@ -433,8 +465,16 @@ function App() {
           </section>
 
           <ChartsSection
-            byPostal={chartStats?.by_postal || []}
+            byPostal={
+              activeFilter
+                ? (chartStats?.by_postal || [])
+                : (chartStats?.by_postal?.length ? chartStats.by_postal : (globalStats?.by_postal || []))
+            }
             contextLabel={activeFilter ? `Filtre actif: ${activeFilter}` : 'Répartition par code postal (top 12)'}
+            isLoading={!chartStats && !globalStats}
+            apiError={apiError}
+            hasActiveFilter={!!activeFilter}
+            onSelectZone={filterByPostal}
           />
 
           {/* Footer bar */}

@@ -48,7 +48,7 @@ function catmullRomToBezier(points, tension = 1) {
 /* =======================
    Histogram
 ======================= */
-function HistogramCard({ title, rows, valueKey, unit, id = 'hist' }) {
+function HistogramCard({ title, rows, valueKey, unit, id = 'hist', onSelectZone }) {
   const safe = Array.isArray(rows) ? rows.filter(r => r && r.code_postal) : []
   const values = safe.map(r => Number(r[valueKey] || 0))
   const max = values.length ? Math.max(...values) : 0
@@ -56,7 +56,7 @@ function HistogramCard({ title, rows, valueKey, unit, id = 'hist' }) {
   const gradId = `${id}-histGradient`
 
   return (
-    <div className="chart-card">
+    <div className="chart-card" role="img" aria-label={`${title} : ${safe.length} zones`}>
       <div className="chart-card-title">{title}</div>
 
       {safe.length === 0 || !max ? (
@@ -88,7 +88,16 @@ function HistogramCard({ title, rows, valueKey, unit, id = 'hist' }) {
                 const y = 56 - height
 
                 return (
-                  <g key={r.code_postal}>
+                  <g
+                    key={r.code_postal}
+                    className={onSelectZone ? 'hist-bar-group hist-bar-group--clickable' : 'hist-bar-group'}
+                    onClick={() => onSelectZone?.(r.code_postal)}
+                    style={onSelectZone ? { cursor: 'pointer' } : undefined}
+                    role={onSelectZone ? 'button' : undefined}
+                    tabIndex={onSelectZone ? 0 : undefined}
+                    onKeyDown={onSelectZone ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectZone(r.code_postal) } } : undefined}
+                    aria-label={onSelectZone ? `Filtrer par ${r.code_postal}, ${v} ${unit}` : undefined}
+                  >
                     <rect
                       className="hist-bar"
                       x={x}
@@ -127,6 +136,8 @@ function HistogramCard({ title, rows, valueKey, unit, id = 'hist' }) {
    Line chart (FULL WIDTH)
 ======================= */
 function LineCard({ title, rows, valueKey, unit, id = "line" }) {
+  const [hoveredIdx, setHoveredIdx] = React.useState(null)
+
   const safe = Array.isArray(rows)
     ? rows.filter(
       r =>
@@ -139,7 +150,7 @@ function LineCard({ title, rows, valueKey, unit, id = "line" }) {
 
   if (!safe.length) {
     return (
-      <div className="chart-card">
+      <div className="chart-card" role="img" aria-label={title}>
         <div className="chart-card-title">{title}</div>
         <div className="chart-empty">Aucune donnée.</div>
       </div>
@@ -181,11 +192,26 @@ function LineCard({ title, rows, valueKey, unit, id = "line" }) {
       .map(p => `${p.x} ${p.y}`)
       .join(" L ")
 
+  const hovered = hoveredIdx != null ? pts[hoveredIdx] : null
+
   return (
-    <div className="chart-card">
+    <div className="chart-card chart-card--line" role="img" aria-label={`${title} : ${safe.length} zones, loyer de ${fmt(min)} à ${fmt(max)} ${unit}`}>
       <div className="chart-card-title">{title}</div>
 
-      <div className="chart-frame">
+      <div className="chart-frame chart-frame--line">
+        {hovered && (
+          <div
+            className="linechart-tooltip"
+            style={{
+              left: `${hovered.x}%`,
+              top: `${hovered.y}%`,
+              transform: 'translate(-50%, -120%)',
+            }}
+          >
+            <span className="linechart-tooltip-cp">{hovered.code_postal}</span>
+            <span className="linechart-tooltip-value">{fmt(hovered.v, 0)} € / mois</span>
+          </div>
+        )}
         <svg
           viewBox="0 0 100 100"
           preserveAspectRatio="none"
@@ -272,8 +298,11 @@ function LineCard({ title, rows, valueKey, unit, id = "line" }) {
               key={i}
               cx={p.x}
               cy={p.y}
-              r="1.5"
+              r={hoveredIdx === i ? 3 : 1.5}
               fill="#ff4d4f"
+              className="line-point"
+              onMouseEnter={() => setHoveredIdx(i)}
+              onMouseLeave={() => setHoveredIdx(null)}
             />
           ))}
         </svg>
@@ -288,13 +317,13 @@ function LineCard({ title, rows, valueKey, unit, id = "line" }) {
 /* =======================
    Pie
 ======================= */
-function PieCard({ title, rows }) {
+function PieCard({ title, rows, onSelectZone }) {
   const safe = Array.isArray(rows) ? rows.filter(r => r && r.code_postal) : []
   const total = safe.reduce((acc, r) => acc + (Number(r.count) || 0), 0)
 
   if (!safe.length || !total) {
     return (
-      <div className="chart-card chart-card--full">
+      <div className="chart-card chart-card--full" role="img" aria-label={title}>
         <div className="chart-card-title">{title}</div>
         <div className="chart-empty">Aucune donnée.</div>
       </div>
@@ -322,7 +351,7 @@ function PieCard({ title, rows }) {
     .join(', ')
 
   return (
-    <div className="chart-card chart-card--full">
+    <div className="chart-card chart-card--full" role="img" aria-label={`${title} : ${fmt(total, 0)} annonces réparties en ${slices.length} zones`}>
       <div className="chart-card-title">{title}</div>
       <div className="pie-layout">
         <div className="pie-circle" style={{ backgroundImage: `conic-gradient(${gradient})` }}>
@@ -334,7 +363,15 @@ function PieCard({ title, rows }) {
 
         <div className="pie-legend">
           {slices.map(s => (
-            <div className="pie-legend-row" key={s.code_postal}>
+            <div
+              className={`pie-legend-row${onSelectZone ? ' pie-legend-row--clickable' : ''}`}
+              key={s.code_postal}
+              onClick={() => onSelectZone?.(s.code_postal)}
+              role={onSelectZone ? 'button' : undefined}
+              tabIndex={onSelectZone ? 0 : undefined}
+              onKeyDown={onSelectZone ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectZone(s.code_postal) } } : undefined}
+              aria-label={onSelectZone ? `Filtrer par ${s.code_postal}, ${fmt(s.count, 0)} annonces` : undefined}
+            >
               <span className="pie-legend-color" style={{ backgroundColor: s.color }} />
               <span className="pie-legend-label">{s.code_postal}</span>
               <span className="pie-legend-value">
@@ -351,9 +388,12 @@ function PieCard({ title, rows }) {
 /* =======================
    Section
 ======================= */
-export default function ChartsSection({ byPostal = [], contextLabel = '' }) {
+export default function ChartsSection({ byPostal = [], contextLabel = '', isLoading = false, apiError = '', hasActiveFilter = false, onSelectZone }) {
   const rows = Array.isArray(byPostal) ? byPostal : []
   const base = rows.filter(r => r && r.code_postal)
+  const hasNoData = !isLoading && base.length === 0
+
+  const totalInCharts = base.reduce((acc, r) => acc + (Number(r.count) || 0), 0)
 
   const topCount = [...base]
     .sort((a, b) => (b.count || 0) - (a.count || 0))
@@ -369,16 +409,44 @@ export default function ChartsSection({ byPostal = [], contextLabel = '' }) {
         <div>
           <h2>Graphes</h2>
           <p>{contextLabel || 'Répartition par code postal (top 12)'}</p>
+          {hasActiveFilter && base.length > 0 && (
+            <p className="charts-header-meta">
+              <span className="charts-badge-filter">Données filtrées</span>
+              <span className="charts-count">{fmt(totalInCharts, 0)} annonces dans ces graphes</span>
+            </p>
+          )}
         </div>
       </div>
 
-      <div className="charts-grid">
+      {isLoading && (
+        <div className="chart-empty" style={{ padding: '1.5rem' }}>
+          Chargement des statistiques…
+        </div>
+      )}
+      {hasNoData && !isLoading && (
+        <div className="chart-empty chart-empty--help" style={{ padding: '1.5rem' }}>
+          {hasActiveFilter
+            ? 'Aucune donnée pour ce filtre. Les graphes n\'affichent que les zones correspondantes.'
+            : <>
+                Aucune donnée pour les graphes.
+                {apiError ? ` ${apiError}` : ' Vérifiez que le backend Django tourne (port 8000) et que des annonces sont chargées : '}
+                {!apiError && (
+                  <code style={{ display: 'block', marginTop: '0.5rem', fontSize: '0.85em' }}>
+                    python manage.py load_csv
+                  </code>
+                )}
+              </>
+          }
+        </div>
+      )}
+      <div className="charts-grid" style={{ display: hasNoData || isLoading ? 'none' : undefined }}>
         <HistogramCard
           id="chart1"
           title="Histogramme des annonces par zone"
           rows={topCount}
           valueKey="count"
           unit="annonces"
+          onSelectZone={onSelectZone}
         />
 
         <LineCard
@@ -389,7 +457,7 @@ export default function ChartsSection({ byPostal = [], contextLabel = '' }) {
           unit="€ / mois"
         />
 
-        <PieCard title="Répartition des annonces (camembert)" rows={topCount} />
+        <PieCard title="Répartition des annonces (camembert)" rows={topCount} onSelectZone={onSelectZone} />
       </div>
     </section>
   )

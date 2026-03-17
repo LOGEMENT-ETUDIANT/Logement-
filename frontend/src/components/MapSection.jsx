@@ -136,22 +136,20 @@ async function loadAllGeoFeatures() {
   return [...communes, ...arrondissements]
 }
 
-export default function MapSection({
-  statsByPostal = [],
-  onSelectZone,
-  selectedPostal,
-}) {
-  const containerRef = useRef(null)
-  const mapRef = useRef(null)
-  const layerRef = useRef(null)
-  const featuresRef = useRef([])
-  const statsRef = useRef(statsByPostal)
-  const selectedRef = useRef(selectedPostal)
-  const priceMapRef = useRef({ map: {}, minP: 500, maxP: 8000 })
+// ── component ──────────────────────────────────────────────────────────────
+export default function MapSection({ statsByPostal = [], onSelectZone, selectedPostal }) {
+  const containerRef  = useRef(null)
+  const mapRef        = useRef(null)
+  const layerRef      = useRef(null)
+  const featuresRef   = useRef([])
+  const statsRef      = useRef(statsByPostal)
+  const selectedRef   = useRef(selectedPostal)
+  const priceMapRef   = useRef({ map: {}, minP: 500, maxP: 8000 })
   const clearHoverRef = useRef(() => {})
 
   statsRef.current = statsByPostal
   selectedRef.current = selectedPostal
+  const hasActiveFilter = Boolean(selectedPostal)
 
   const [geoLoading, setGeoLoading] = useState(true)
   const [geoError, setGeoError] = useState('')
@@ -343,6 +341,8 @@ export default function MapSection({
     })
   }, [selectedPostal])
 
+  const noDataForFilter = hasActiveFilter && !geoLoading && !geoError && statsByPostal.length === 0
+
   return (
     <div className="imap-wrap">
       {geoLoading && (
@@ -356,6 +356,12 @@ export default function MapSection({
         </div>
       )}
       {geoError && <div className="imap-overlay imap-error">{geoError}</div>}
+      {noDataForFilter && (
+        <div className="imap-overlay imap-empty-filter">
+          <p>Aucune donnée pour ce filtre.</p>
+          <p className="imap-empty-filter-sub">La carte n&apos;affiche que les zones correspondantes.</p>
+        </div>
+      )}
       <div ref={containerRef} className="imap-container" tabIndex={-1} />
       {!geoLoading && (
         <div className="imap-legend">
